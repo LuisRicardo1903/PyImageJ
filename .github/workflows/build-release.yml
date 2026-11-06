@@ -1,0 +1,90 @@
+name: Build Windows Executable & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build Standalone Executable with PyInstaller
+        run: |
+          pyinstaller --noconsole --onefile `
+            --name "PyImageJ-Studio" `
+            --add-data "core;core" `
+            --add-data "gui;gui" `
+            --hidden-import "PySide6.QtCore" `
+            --hidden-import "PySide6.QtGui" `
+            --hidden-import "PySide6.QtWidgets" `
+            --hidden-import "scipy.spatial.distance" `
+            --hidden-import "skimage.filters" `
+            --hidden-import "skimage.measure" `
+            --hidden-import "skimage.segmentation" `
+            --exclude-module "matplotlib" `
+            --exclude-module "tkinter" `
+            --exclude-module "PySide6.QtQml" `
+            --exclude-module "PySide6.QtQuick" `
+            --exclude-module "PySide6.QtQuickWidgets" `
+            --exclude-module "PySide6.QtWebEngineCore" `
+            --exclude-module "PySide6.QtWebEngineWidgets" `
+            --exclude-module "PySide6.Qt3DCore" `
+            --exclude-module "PySide6.Qt3DRender" `
+            --exclude-module "PySide6.QtBluetooth" `
+            --exclude-module "PySide6.QtSensors" `
+            --exclude-module "PySide6.QtPositioning" `
+            --exclude-module "PySide6.QtMultimedia" `
+            --exclude-module "PySide6.QtMultimediaWidgets" `
+            --exclude-module "PySide6.QtNfc" `
+            --exclude-module "PySide6.QtPdf" `
+            --exclude-module "PySide6.QtPdfWidgets" `
+            --exclude-module "PySide6.QtSpatialAudio" `
+            --exclude-module "PySide6.QtDesigner" `
+            --exclude-module "PySide6.QtHelp" `
+            --exclude-module "PySide6.QtTest" `
+            --exclude-module "PySide6.QtSql" `
+            --exclude-module "PySide6.QtNetwork" `
+            --clean main.py
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PyImageJ-Studio-Windows
+          path: dist/PyImageJ-Studio.exe
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PyImageJ-Studio.exe
+          name: PyImageJ Studio ${{ github.ref_name }}
+          body: |
+            ## PyImageJ Studio - Versão Compilada para Windows
+            
+            Executável autônomo compilado diretamente nos servidores do GitHub.
+            
+            ### Como usar:
+            1. Baixe o arquivo `PyImageJ-Studio.exe` abaixo.
+            2. Dê duplo clique para executar (não precisa de Python instalado).
+          draft: false
+          prerelease: false
