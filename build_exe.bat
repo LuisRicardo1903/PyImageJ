@@ -36,9 +36,14 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
+echo 3. Copiando executavel para a pasta principal...
+copy /y "dist\PyImageJ-Studio.exe" "PyImageJ-Studio.exe"
+
+echo.
 echo ===================================================
-echo   SUCESSO! Executavel gerado na pasta:
-echo   %~dp0dist\PyImageJ-Studio.exe
+echo   SUCESSO! Executavel gerado:
+echo   - Na pasta principal: %~dp0PyImageJ-Studio.exe
+echo   - E na pasta dist:    %~dp0dist\PyImageJ-Studio.exe
 echo ===================================================
 echo.
 pause
