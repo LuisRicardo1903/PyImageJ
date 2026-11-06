@@ -54,22 +54,29 @@ class InteractiveCanvas(QGraphicsView):
         self.pixmap_item = QGraphicsPixmapItem()
         self.scene.addItem(self.pixmap_item)
 
-        # ROI Items
-        pen_dash = QPen(QColor(0, 255, 255), 2, Qt.DashLine)
+        # ROI Items - High-contrast Electric Gold with translucent tint
+        # Cosmetic pen keeps constant 3px width across all zoom levels
+        roi_border_color = QColor(255, 214, 0, 245)  # Vivid high-contrast gold
+        roi_fill_color = QColor(255, 214, 0, 45)     # Translucent selection tint
+        pen_roi = QPen(roi_border_color, 3, Qt.DashLine)
+        pen_roi.setCosmetic(True)
+        brush_roi = QBrush(roi_fill_color)
 
         self.roi_rect_item = QGraphicsRectItem()
-        self.roi_rect_item.setPen(pen_dash)
+        self.roi_rect_item.setPen(pen_roi)
+        self.roi_rect_item.setBrush(brush_roi)
         self.roi_rect_item.setVisible(False)
         self.scene.addItem(self.roi_rect_item)
 
         self.roi_ellipse_item = QGraphicsEllipseItem()
-        self.roi_ellipse_item.setPen(pen_dash)
+        self.roi_ellipse_item.setPen(pen_roi)
+        self.roi_ellipse_item.setBrush(brush_roi)
         self.roi_ellipse_item.setVisible(False)
         self.scene.addItem(self.roi_ellipse_item)
 
         self.roi_poly_item = QGraphicsPolygonItem()
-        self.roi_poly_item.setPen(pen_dash)
-        self.roi_poly_item.setBrush(QBrush(QColor(0, 255, 255, 35)))
+        self.roi_poly_item.setPen(pen_roi)
+        self.roi_poly_item.setBrush(brush_roi)
         self.roi_poly_item.setVisible(False)
         self.scene.addItem(self.roi_poly_item)
 

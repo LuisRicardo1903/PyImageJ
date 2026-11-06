@@ -249,7 +249,7 @@ def generate_html_report(
             <div class="meta">
                 <div><strong>Amostra:</strong> {sample_name}</div>
                 <div><strong>Data:</strong> {now_str}</div>
-                <div><strong>Software:</strong> PyImageJ Studio v1.1.0</div>
+                <div><strong>Software:</strong> PyImageJ Studio v1.0.0</div>
             </div>
         </div>
 
