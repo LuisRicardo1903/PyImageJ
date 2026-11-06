@@ -26,10 +26,9 @@ pyinstaller --noconsole --onedir ^
     --hidden-import "PySide6.QtCore" ^
     --hidden-import "PySide6.QtGui" ^
     --hidden-import "PySide6.QtWidgets" ^
-    --hidden-import "scipy.spatial.distance" ^
-    --hidden-import "skimage.filters" ^
-    --hidden-import "skimage.measure" ^
-    --hidden-import "skimage.segmentation" ^
+    --exclude-module "scipy" ^
+    --exclude-module "skimage" ^
+    --exclude-module "pandas" ^
     --exclude-module "matplotlib" ^
     --exclude-module "tkinter" ^
     --exclude-module "PySide6.QtQml" ^

@@ -1,16 +1,15 @@
 """
 Particle Analyzer module.
 Matches ImageJ 1.54 ParticleAnalyzer algorithms, formulas, and measurements.
+Pure NumPy and OpenCV implementation: zero external dependencies on scipy, scikit-image, or pandas.
 """
 
 from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple, Optional
 import cv2
 import numpy as np
-import pandas as pd
-from scipy.spatial.distance import pdist
-from skimage.measure import label, regionprops
 from core.scale import ScaleCalibration
+from core.particle_table import ParticleTable
 
 
 @dataclass
@@ -28,6 +27,7 @@ class ParticleSummary:
 def calculate_max_feret(contour: np.ndarray) -> float:
     """
     Calculates Maximum Feret diameter (maximum caliper distance) from contour.
+    Vectorized NumPy implementation on convex hull vertices.
     """
     if len(contour) < 2:
         return 0.0
@@ -35,8 +35,30 @@ def calculate_max_feret(contour: np.ndarray) -> float:
     hull = cv2.convexHull(pts).reshape(-1, 2)
     if len(hull) < 2:
         return 0.0
-    dists = pdist(hull)
-    return float(np.max(dists)) if len(dists) > 0 else 0.0
+    diff = hull[:, np.newaxis, :] - hull[np.newaxis, :, :]
+    dists_sq = np.sum(diff ** 2, axis=-1)
+    return float(np.sqrt(np.max(dists_sq)))
+
+
+def _benkrid_crookes_perimeter(binary_crop: np.ndarray) -> float:
+    """
+    Computes Benkrid & Crookes FPGA perimeter estimator
+    (exact mathematical equivalent of ImageJ & scikit-image perimeter).
+    """
+    pad = np.pad(binary_crop, 1, mode="constant", constant_values=0)
+    kernel_cross = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)
+    eroded = cv2.erode(pad, kernel_cross, borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    border = pad - eroded
+
+    weights = np.zeros(50, dtype=np.float64)
+    weights[[5, 7, 15, 17, 25, 27]] = 1.0
+    weights[[21, 33]] = np.sqrt(2.0)
+    weights[[13, 23]] = (1.0 + np.sqrt(2.0)) / 2.0
+
+    conv_kernel = np.array([[10, 2, 10], [2, 1, 2], [10, 2, 10]], dtype=np.float32)
+    conv = cv2.filter2D(border.astype(np.float32), -1, conv_kernel, borderType=cv2.BORDER_CONSTANT)
+    hist = np.bincount(np.round(conv).astype(np.int32).ravel(), minlength=50)[:50]
+    return float(np.dot(hist, weights))
 
 
 def analyze_particles(
@@ -48,11 +70,12 @@ def analyze_particles(
     min_circularity: float = 0.0,
     max_circularity: float = 1.0,
     valid_roi_mask: Optional[np.ndarray] = None
-) -> Tuple[pd.DataFrame, ParticleSummary, np.ndarray]:
+) -> Tuple[ParticleTable, ParticleSummary, np.ndarray]:
     """
     Executes Analyze Particles on binary image.
+    High-performance pure C++ (OpenCV) & NumPy implementation.
     Returns:
-        - DataFrame of particle measurements
+        - ParticleTable of particle measurements
         - ParticleSummary
         - Annotated overlay image (BGR)
     """
@@ -67,6 +90,8 @@ def analyze_particles(
     if valid_roi_mask is not None:
         active_binary = active_binary & valid_roi_mask
 
+    active_u8 = active_binary.astype(np.uint8)
+
     # Prepare intensity image and base overlay image
     if gray_image is not None:
         if gray_image.ndim == 3:
@@ -79,21 +104,28 @@ def analyze_particles(
         intensity_img = None
         overlay = np.zeros((*binary_mask.shape, 3), dtype=np.uint8)
 
-    # Find connected components / contours
-    lbl = label(active_binary)
-    props = regionprops(lbl, intensity_image=intensity_img)
-
-    # Prepare contours for drawing and feret
-    contours, _ = cv2.findContours(active_binary.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # High-speed connected components with statistics (C++)
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(active_u8, connectivity=8)
 
     rows: List[Dict[str, Any]] = []
 
-    for p in props:
-        area_px = p.area
+    for i in range(1, num_labels):
+        area_px = float(stats[i, cv2.CC_STAT_AREA])
         if area_px < min_size_px or area_px > max_size_px:
             continue
 
-        perim_px = p.perimeter
+        x0 = int(stats[i, cv2.CC_STAT_LEFT])
+        y0 = int(stats[i, cv2.CC_STAT_TOP])
+        w = int(stats[i, cv2.CC_STAT_WIDTH])
+        h = int(stats[i, cv2.CC_STAT_HEIGHT])
+        cx_px, cy_px = float(centroids[i][0]), float(centroids[i][1])
+
+        # Sub-mask for this specific connected component
+        sub = (labels[y0:y0 + h, x0:x0 + w] == i).astype(np.uint8)
+
+        # Exact Benkrid & Crookes perimeter
+        perim_px = _benkrid_crookes_perimeter(sub)
+
         # ImageJ circularity: 4 * PI * (area / perimeter^2)
         if perim_px > 0:
             circ = (4.0 * np.pi * area_px) / (perim_px ** 2)
@@ -104,35 +136,54 @@ def analyze_particles(
         if circ < min_circularity or circ > max_circularity:
             continue
 
-        # Physical measurements
-        area_units = area_px * area_factor
-        perim_units = perim_px * calib_um
-        major_units = p.major_axis_length * calib_um
-        minor_units = p.minor_axis_length * calib_um
-        eq_diam_units = 2.0 * np.sqrt(area_units / np.pi)
+        # Inertia moments for major and minor axes
+        M = cv2.moments(sub, binaryImage=True)
+        m00 = M["m00"]
+        if m00 > 0:
+            mu20 = M["mu20"] / m00
+            mu02 = M["mu02"] / m00
+            mu11 = M["mu11"] / m00
+            delta = np.sqrt(max(0.0, (mu20 - mu02) ** 2 + 4.0 * (mu11 ** 2)))
+            l1 = (mu20 + mu02 + delta) / 2.0
+            l2 = max(0.0, (mu20 + mu02 - delta) / 2.0)
+            major_px = 4.0 * np.sqrt(l1)
+            minor_px = 4.0 * np.sqrt(l2)
+        else:
+            major_px = minor_px = 0.0
 
         # Aspect Ratio = Major / Minor
-        aspect_ratio = (p.major_axis_length / p.minor_axis_length) if p.minor_axis_length > 0 else 1.0
+        aspect_ratio = (major_px / minor_px) if minor_px > 0 else 1.0
 
         # Roundness = 4 * Area / (PI * Major^2)
-        roundness = (4.0 * area_px) / (np.pi * (p.major_axis_length ** 2)) if p.major_axis_length > 0 else 0.0
+        roundness = (4.0 * area_px) / (np.pi * (major_px ** 2)) if major_px > 0 else 0.0
 
         # Solidity = Area / Convex Area
-        solidity = p.solidity
-
-        # Centroid
-        centroid_y_px, centroid_x_px = p.centroid
-        centroid_x_units = centroid_x_px * calib_um
-        centroid_y_units = centroid_y_px * calib_um
+        cnts, _ = cv2.findContours(sub, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cnts:
+            hull = cv2.convexHull(cnts[0])
+            hull_mask = np.zeros_like(sub)
+            cv2.drawContours(hull_mask, [hull], 0, 1, -1)
+            hull_count = cv2.countNonZero(hull_mask)
+            solidity = min(1.0, area_px / hull_count) if hull_count > 0 else 1.0
+        else:
+            solidity = 1.0
 
         # Mean Intensity
         if intensity_img is not None:
-            if np.isscalar(p.mean_intensity):
-                mean_intensity = float(p.mean_intensity)
-            else:
-                mean_intensity = float(np.mean(p.mean_intensity))
+            crop_gray = intensity_img[y0:y0 + h, x0:x0 + w]
+            px_vals = crop_gray[sub > 0]
+            mean_intensity = float(np.mean(px_vals)) if len(px_vals) > 0 else 0.0
         else:
             mean_intensity = 0.0
+
+        # Physical measurements
+        area_units = area_px * area_factor
+        perim_units = perim_px * calib_um
+        major_units = major_px * calib_um
+        minor_units = minor_px * calib_um
+        eq_diam_units = 2.0 * np.sqrt(area_units / np.pi)
+        centroid_x_units = cx_px * calib_um
+        centroid_y_units = cy_px * calib_um
 
         rows.append({
             "ID": len(rows) + 1,
@@ -150,10 +201,11 @@ def analyze_particles(
             "Mean_Gray": round(mean_intensity, 1)
         })
 
-    df = pd.DataFrame(rows)
+    df = ParticleTable(rows)
 
-    # Draw contours and IDs on overlay
-    cv2.drawContours(overlay, contours, -1, (0, 0, 255), 1)  # Red outline
+    # Draw contours on overlay
+    contours, _ = cv2.findContours(active_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(overlay, contours, -1, (0, 0, 255), 1)
 
     # Summary
     total_analyzed_px = np.sum(valid_roi_mask) if valid_roi_mask is not None else (binary_mask.shape[0] * binary_mask.shape[1])
@@ -161,7 +213,6 @@ def analyze_particles(
     total_particle_area_units = df["Area"].sum() if len(df) > 0 else 0.0
     area_fraction_pct = (total_particle_area_units / total_analyzed_units * 100.0) if total_analyzed_units > 0 else 0.0
 
-    # Density per mm2 (1 mm2 = 1e6 um2 if unit is um)
     unit_lower = scale.unit.lower()
     if "um" in unit_lower or "µm" in unit_lower:
         analyzed_mm2 = total_analyzed_units / 1e6

@@ -9,7 +9,7 @@ import base64
 import os
 import cv2
 import numpy as np
-import pandas as pd
+from core.particle_table import ParticleTable
 from core.particle_analyzer import ParticleSummary
 from core.scale import ScaleCalibration
 
@@ -30,7 +30,7 @@ def encode_image_base64(img_bgr_or_rgb: np.ndarray) -> str:
 def generate_html_report(
     original_img: np.ndarray,
     overlay_img: np.ndarray,
-    df: pd.DataFrame,
+    df: ParticleTable,
     summary: ParticleSummary,
     scale: ScaleCalibration,
     sample_name: str = "Amostra_01",

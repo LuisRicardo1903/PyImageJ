@@ -6,7 +6,6 @@ interactive native histograms, and handles export to CSV/Excel and Technical PDF
 
 from typing import Optional
 import os
-import pandas as pd
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QColor
 from PySide6.QtWidgets import (
@@ -14,6 +13,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QPushButton, QFileDialog, QLineEdit, QHeaderView,
     QMessageBox, QTabWidget
 )
+from core.particle_table import ParticleTable
 from core.particle_analyzer import ParticleSummary
 from core.scale import ScaleCalibration
 from core.report_generator import generate_html_report
@@ -24,7 +24,7 @@ import numpy as np
 class ResultsPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.dataframe: Optional[pd.DataFrame] = None
+        self.dataframe: Optional[ParticleTable] = None
         self.summary: Optional[ParticleSummary] = None
         self.scale: ScaleCalibration = ScaleCalibration()
         self.original_image: Optional[np.ndarray] = None
@@ -115,7 +115,7 @@ class ResultsPanel(QWidget):
 
     def set_results(
         self,
-        df: pd.DataFrame,
+        df: ParticleTable,
         summary: ParticleSummary,
         scale: ScaleCalibration,
         original_img: Optional[np.ndarray] = None,
@@ -151,7 +151,7 @@ class ResultsPanel(QWidget):
             self.hist_size.set_data([])
             self.hist_circ.set_data([])
 
-    def populate_table(self, df: pd.DataFrame):
+    def populate_table(self, df: ParticleTable):
         self.table.setSortingEnabled(False)
         self.table.clear()
         if df is None or len(df) == 0:

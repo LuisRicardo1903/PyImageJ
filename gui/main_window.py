@@ -580,8 +580,8 @@ class MainWindow(QMainWindow):
             total_processed += 1
 
         # Save consolidated summary
-        import pandas as pd
-        df_summary = pd.DataFrame(summary_rows)
+        from core.particle_table import ParticleTable
+        df_summary = ParticleTable(summary_rows)
         df_summary.to_csv(os.path.join(out_folder, "RESUMO_LOTE_CONSOLIDADO.csv"), index=False)
 
         QMessageBox.information(
