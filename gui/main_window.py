@@ -31,6 +31,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("PyImageJ Studio - Análise e Processamento de Imagens")
         self.resize(1300, 850)
 
+        # Set application icon
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+
         self.doc: ImageDocument = ImageDocument()
         self.calibration: ScaleCalibration = ScaleCalibration(pixels=1.0, known_distance=1.0, unit="px")
         self.active_binary_mask: Optional[np.ndarray] = None
@@ -45,6 +50,7 @@ class MainWindow(QMainWindow):
         self.canvas = InteractiveCanvas(self)
         self.canvas.pixel_hovered.connect(self.on_pixel_hovered)
         self.canvas.roi_selected.connect(self.on_roi_selected)
+        self.canvas.roi_mask_defined.connect(self.on_roi_mask_defined)
         self.setCentralWidget(self.canvas)
 
         # Status Bar
@@ -106,11 +112,19 @@ class MainWindow(QMainWindow):
         self.act_undo.setShortcut(QKeySequence.Undo)
         self.act_undo.triggered.connect(self.undo)
 
-        self.act_roi_mode = QAction("Selecionar ROI (Retângulo)", self)
-        self.act_roi_mode.setCheckable(True)
-        self.act_roi_mode.toggled.connect(self.toggle_roi_mode)
+        self.act_roi_rect = QAction("ROI Retângulo", self)
+        self.act_roi_rect.setCheckable(True)
+        self.act_roi_rect.triggered.connect(lambda: self.set_roi_mode("rect"))
 
-        self.act_clear_roi = QAction("Limpar Seleção de ROI", self)
+        self.act_roi_ellipse = QAction("ROI Elipse/Círculo", self)
+        self.act_roi_ellipse.setCheckable(True)
+        self.act_roi_ellipse.triggered.connect(lambda: self.set_roi_mode("ellipse"))
+
+        self.act_roi_polygon = QAction("ROI Polígono Livre", self)
+        self.act_roi_polygon.setCheckable(True)
+        self.act_roi_polygon.triggered.connect(lambda: self.set_roi_mode("polygon"))
+
+        self.act_clear_roi = QAction("Limpar ROI", self)
         self.act_clear_roi.triggered.connect(self.clear_roi)
 
         # Process Actions
@@ -160,7 +174,10 @@ class MainWindow(QMainWindow):
         m_edit = menubar.addMenu("&Editar")
         m_edit.addAction(self.act_undo)
         m_edit.addSeparator()
-        m_edit.addAction(self.act_roi_mode)
+        m_roi_menu = m_edit.addMenu("Região de Interesse (ROI)")
+        m_roi_menu.addAction(self.act_roi_rect)
+        m_roi_menu.addAction(self.act_roi_ellipse)
+        m_roi_menu.addAction(self.act_roi_polygon)
         m_edit.addAction(self.act_clear_roi)
 
         # Process
@@ -189,7 +206,11 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.act_undo)
         toolbar.addSeparator()
         toolbar.addAction(self.act_reset_zoom)
-        toolbar.addAction(self.act_roi_mode)
+        toolbar.addSeparator()
+        toolbar.addAction(self.act_roi_rect)
+        toolbar.addAction(self.act_roi_ellipse)
+        toolbar.addAction(self.act_roi_polygon)
+        toolbar.addAction(self.act_clear_roi)
         toolbar.addSeparator()
         toolbar.addAction(self.act_auto_scale)
         toolbar.addAction(self.act_scale)
@@ -315,12 +336,32 @@ class MainWindow(QMainWindow):
         self.canvas.set_image(self.doc.current_image)
         self.status_bar.showMessage(f"Filtro aplicado: {filter_name}", 3000)
 
-    def toggle_roi_mode(self, enabled: bool):
-        self.canvas.roi_mode = enabled
-        if enabled:
-            self.status_bar.showMessage("Modo ROI ativado: clique e arraste para desenhar o retângulo.", 4000)
+    def set_roi_mode(self, mode: str):
+        # Uncheck other ROI actions
+        self.act_roi_rect.setChecked(mode == "rect")
+        self.act_roi_ellipse.setChecked(mode == "ellipse")
+        self.act_roi_polygon.setChecked(mode == "polygon")
+        self.canvas.set_roi_mode(mode)
+        if mode == "polygon":
+            self.status_bar.showMessage("Modo Polígono: clique pontos para desenhar e clique com botão DIREITO para fechar.", 6000)
+        elif mode in ["rect", "ellipse"]:
+            self.status_bar.showMessage(f"Modo {mode.capitalize()}: clique e arraste na imagem.", 4000)
+        else:
+            self.status_bar.showMessage("Seleção de ROI desativada.", 2000)
+
+    def on_roi_mask_defined(self, mask: np.ndarray, desc: str):
+        self.valid_roi_mask = mask.copy()
+        if self.scale_box_crop:
+            min_x, min_y, _, _ = self.scale_box_crop
+            self.valid_roi_mask[max(0, min_y - 5):, max(0, min_x - 5):] = False
+        self.status_bar.showMessage(f"ROI ativa: {desc}", 4000)
+        self.on_threshold_preview(self.threshold_panel.slider.value(), self.threshold_panel.chk_dark.isChecked())
 
     def clear_roi(self):
+        self.act_roi_rect.setChecked(False)
+        self.act_roi_ellipse.setChecked(False)
+        self.act_roi_polygon.setChecked(False)
+        self.canvas.set_roi_mode("none")
         self.canvas.clear_roi()
         if self.doc.is_loaded:
             h, w = self.doc.shape[:2]
@@ -328,6 +369,7 @@ class MainWindow(QMainWindow):
             if self.scale_box_crop:
                 min_x, min_y, _, _ = self.scale_box_crop
                 self.valid_roi_mask[max(0, min_y - 5):, max(0, min_x - 5):] = False
+            self.on_threshold_preview(self.threshold_panel.slider.value(), self.threshold_panel.chk_dark.isChecked())
         self.status_bar.showMessage("Seleção de ROI limpa.", 2000)
 
     def on_roi_selected(self, x: int, y: int, w: int, h: int):
@@ -461,7 +503,15 @@ class MainWindow(QMainWindow):
         )
 
         self.canvas.set_image(overlay)
-        self.results_panel.set_results(df, summary, unit=self.calibration.unit)
+        sample_name = os.path.splitext(self.doc.title)[0]
+        self.results_panel.set_results(
+            df=df,
+            summary=summary,
+            scale=self.calibration,
+            original_img=self.doc.current_image,
+            overlay_img=overlay,
+            sample_name=sample_name
+        )
         self.dock_results.show()
         self.dock_results.raise_()
         self.status_bar.showMessage(f"Análise concluída: {summary.count} poros identificados ({summary.area_fraction_pct:.2f}% porosidade).", 5000)

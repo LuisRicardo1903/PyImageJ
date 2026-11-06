@@ -18,9 +18,11 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 echo 2. Executando PyInstaller com exclusao de modulos desnecessarios...
 pyinstaller --noconsole --onefile ^
+    --icon "icon.ico" ^
     --name "PyImageJ-Studio" ^
     --add-data "core;core" ^
     --add-data "gui;gui" ^
+    --add-data "icon.png;." ^
     --hidden-import "PySide6.QtCore" ^
     --hidden-import "PySide6.QtGui" ^
     --hidden-import "PySide6.QtWidgets" ^

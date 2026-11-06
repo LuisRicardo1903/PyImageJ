@@ -11,7 +11,10 @@
 - **Limiarização em Tempo Real (Live Threshold)**: Slider interativo com visualização imediata da máscara sobre a imagem e cálculo dinâmico da porcentagem de porosidade estimada.
 - **Algoritmos do ImageJ**: Otsu, Triangle, Default (IsoData), Li, Yen, Mean, Minimum e Watershed para separação de partículas aglomeradas.
 - **Analyze Particles Completo**: Calcula Área ($\mu\text{m}^2$), Diâmetro Equivalente, Perímetro, Circularidade ($4\pi \cdot \text{Área}/\text{Perímetro}^2$), Aspect Ratio, Roundness e Solidity.
-- **Tabela de Resultados Ordenável**: Busca rápida por ID/valores e exportação direta para **CSV** ou **Excel**.
+- **Tabela e Histogramas Nativos**: Visualização em abas com tabela completa de partículas e histogramas de frequência (Diâmetro Equivalente e Circularidade) renderizados nativamente em Qt sem dependências pesadas.
+- **Ferramentas Avançadas de ROI**: Seleção de regiões de interesse por Retângulo, Elipse/Círculo e Polígono livre.
+- **Laudo Técnico em PDF/HTML**: Botão com 1 clique para exportar relatório completo de análise com imagens comparativas, KPIs de porosidade e tabelas estatísticas.
+- **Ícone Personalizado**: Design exclusivo de microscopia/metalográfica integrado no executável `.exe` e na janela.
 - **Processamento em Lote (Batch Processing)**: Processa uma pasta inteira de micrografias com um único clique, gerando imagens com contornos destacados e um arquivo CSV consolidado.
 
 ---

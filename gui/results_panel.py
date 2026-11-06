@@ -1,18 +1,24 @@
 """
-Results and measurements table panel.
+Results and measurements panel.
 Displays individual particle measurements, summary statistics,
-and handles export to CSV/Excel.
+interactive native histograms, and handles export to CSV/Excel and Technical PDF/HTML Report.
 """
 
 from typing import Optional
 import os
 import pandas as pd
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
-    QTableWidgetItem, QPushButton, QFileDialog, QLineEdit, QHeaderView, QMessageBox
+    QTableWidgetItem, QPushButton, QFileDialog, QLineEdit, QHeaderView,
+    QMessageBox, QTabWidget
 )
 from core.particle_analyzer import ParticleSummary
+from core.scale import ScaleCalibration
+from core.report_generator import generate_html_report
+from gui.histogram_widget import HistogramWidget
+import numpy as np
 
 
 class ResultsPanel(QWidget):
@@ -20,6 +26,11 @@ class ResultsPanel(QWidget):
         super().__init__(parent)
         self.dataframe: Optional[pd.DataFrame] = None
         self.summary: Optional[ParticleSummary] = None
+        self.scale: ScaleCalibration = ScaleCalibration()
+        self.original_image: Optional[np.ndarray] = None
+        self.overlay_image: Optional[np.ndarray] = None
+        self.sample_name: str = "Amostra"
+
         self.init_ui()
 
     def init_ui(self):
@@ -39,7 +50,7 @@ class ResultsPanel(QWidget):
         """)
         layout.addWidget(self.lbl_summary)
 
-        # Filter bar and export button
+        # Top Action Bar: Search, Export CSV, Generate Technical Report
         h_bar = QHBoxLayout()
         self.txt_filter = QLineEdit()
         self.txt_filter.setPlaceholderText("Filtrar por ID ou valor...")
@@ -47,13 +58,29 @@ class ResultsPanel(QWidget):
         h_bar.addWidget(self.txt_filter)
 
         self.btn_export = QPushButton("Exportar CSV / Excel")
-        self.btn_export.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 5px 12px;")
+        self.btn_export.setStyleSheet("background-color: #388e3c; color: white; font-weight: bold; padding: 5px 12px;")
         self.btn_export.clicked.connect(self.export_csv)
         h_bar.addWidget(self.btn_export)
 
+        self.btn_report = QPushButton("📄 Gerar Laudo Técnico (PDF)")
+        self.btn_report.setStyleSheet("background-color: #0288d1; color: white; font-weight: bold; padding: 5px 12px;")
+        self.btn_report.clicked.connect(self.generate_report)
+        h_bar.addWidget(self.btn_report)
+
         layout.addLayout(h_bar)
 
-        # Table
+        # Tabs: Table, Size Histogram, Circularity Histogram
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #333333; background: #242424; }
+            QTabBar::tab { background: #2d2d2d; color: #b0b0b0; padding: 6px 14px; font-weight: 500; }
+            QTabBar::tab:selected { background: #007acc; color: white; font-weight: bold; }
+        """)
+
+        # Tab 1: Table
+        tab_table = QWidget()
+        l_tab1 = QVBoxLayout(tab_table)
+        l_tab1.setContentsMargins(0, 0, 0, 0)
         self.table = QTableWidget()
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
@@ -73,13 +100,36 @@ class ResultsPanel(QWidget):
                 border: 1px solid #444444;
             }
         """)
-        layout.addWidget(self.table)
+        l_tab1.addWidget(self.table)
+        self.tabs.addTab(tab_table, "📋 Tabela de Medições")
 
-    def set_results(self, df: pd.DataFrame, summary: ParticleSummary, unit: str = "µm"):
+        # Tab 2: Size Histogram
+        self.hist_size = HistogramWidget(title="Distribuição do Diâmetro Equivalente dos Poros", unit="µm", color=QColor("#1976d2"))
+        self.tabs.addTab(self.hist_size, "📊 Histograma de Tamanhos")
+
+        # Tab 3: Circularity Histogram
+        self.hist_circ = HistogramWidget(title="Distribuição de Circularidade (1.0 = Esférico)", unit="", color=QColor("#388e3c"))
+        self.tabs.addTab(self.hist_circ, "🔵 Histograma de Circularidade")
+
+        layout.addWidget(self.tabs)
+
+    def set_results(
+        self,
+        df: pd.DataFrame,
+        summary: ParticleSummary,
+        scale: ScaleCalibration,
+        original_img: Optional[np.ndarray] = None,
+        overlay_img: Optional[np.ndarray] = None,
+        sample_name: str = "Amostra"
+    ):
         self.dataframe = df
         self.summary = summary
+        self.scale = scale
+        self.original_image = original_img
+        self.overlay_image = overlay_img
+        self.sample_name = sample_name
 
-        # Format summary string
+        unit = scale.unit
         unit_area = f"{unit}²"
         self.lbl_summary.setText(
             f"<b>Contagem:</b> {summary.count} poros | "
@@ -91,6 +141,15 @@ class ResultsPanel(QWidget):
         )
 
         self.populate_table(df)
+
+        # Update Histograms
+        if len(df) > 0:
+            self.hist_size.unit = unit
+            self.hist_size.set_data(df["Eq_Diam"].tolist(), bins=25)
+            self.hist_circ.set_data(df["Circularity"].tolist(), bins=20)
+        else:
+            self.hist_size.set_data([])
+            self.hist_circ.set_data([])
 
     def populate_table(self, df: pd.DataFrame):
         self.table.setSortingEnabled(False)
@@ -146,3 +205,36 @@ class ResultsPanel(QWidget):
                 QMessageBox.information(self, "Sucesso", f"Resultados exportados para:\n{file_path}")
             except Exception as e:
                 QMessageBox.critical(self, "Erro", f"Falha ao exportar arquivo:\n{e}")
+
+    def generate_report(self):
+        if self.dataframe is None or len(self.dataframe) == 0 or self.summary is None:
+            QMessageBox.warning(self, "Aviso", "Execute a análise de partículas antes de gerar o laudo.")
+            return
+
+        default_name = f"Laudo_{self.sample_name}.html"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Salvar Laudo Técnico", default_name, "Documento HTML / PDF (*.html)"
+        )
+        if not file_path:
+            return
+
+        try:
+            generate_html_report(
+                original_img=self.original_image,
+                overlay_img=self.overlay_image,
+                df=self.dataframe,
+                summary=self.summary,
+                scale=self.scale,
+                sample_name=self.sample_name,
+                output_html_path=file_path
+            )
+            # Open automatically in default browser for instant viewing/printing to PDF
+            QDesktopServices.openUrl(QUrl.fromLocalFile(file_path))
+            QMessageBox.information(
+                self, "Laudo Gerado",
+                f"Laudo técnico gerado com sucesso!\n"
+                f"Arquivo salvo em:\n{file_path}\n\n"
+                f"O relatório foi aberto no seu navegador. Você pode imprimi-lo ou salvá-lo em PDF com 'Ctrl+P'!"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Falha ao gerar laudo:\n{e}")

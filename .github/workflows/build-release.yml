@@ -28,12 +28,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install UPX Compression
+        run: |
+          choco install upx --no-progress
+
       - name: Build Standalone Executable with PyInstaller
         run: |
           pyinstaller --noconsole --onefile `
+            --icon "icon.ico" `
             --name "PyImageJ-Studio" `
             --add-data "core;core" `
             --add-data "gui;gui" `
+            --add-data "icon.png;." `
             --hidden-import "PySide6.QtCore" `
             --hidden-import "PySide6.QtGui" `
             --hidden-import "PySide6.QtWidgets" `
@@ -79,9 +85,16 @@ jobs:
           files: dist/PyImageJ-Studio.exe
           name: PyImageJ Studio ${{ github.ref_name }}
           body: |
-            ## PyImageJ Studio - Versão Compilada para Windows
+            ## PyImageJ Studio ${{ github.ref_name }} - Versão Compilada para Windows
             
-            Executável autônomo compilado diretamente nos servidores do GitHub.
+            Executável autônomo compilado diretamente nos servidores do GitHub com ícone personalizado e otimizações de performance.
+            
+            ### ✨ Novidades nesta versão:
+            - **Ícone personalizado**: Visual profissional em microscopia/análise metalográfica.
+            - **Gráficos e Histogramas Nativos**: Aba interativa com distribuição de diâmetro de poros e circularidade.
+            - **Ferramentas de ROI Expandidas**: Seleção de área por Retângulo, Elipse/Círculo e Polígono livre.
+            - **Laudo Técnico em PDF/HTML**: Botão para exportar relatório completo pronto para impressão com métricas ISO/ASTM.
+            - **Performance Otimizada**: Preview de threshold a 100+ FPS sem travamentos.
             
             ### Como usar:
             1. Baixe o arquivo `PyImageJ-Studio.exe` abaixo.
