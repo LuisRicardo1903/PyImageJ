@@ -27,12 +27,17 @@
    ```
 
 ### Opção 2: Gerar o Executável Standalone (.exe)
-1. Dê duplo clique no arquivo **`build_exe.bat`** no Windows.
-2. O PyInstaller irá compilar todos os arquivos e criar o executável final em:
-   ```
-   dist\PyImageJ-Studio.exe
-   ```
-3. O `.exe` gerado pode ser copiado para qualquer outro computador Windows sem precisar instalar Python!
+
+Você pode escolher entre dois modos de compilação:
+
+1. **Modo Rápido / Diretório (`build_exe_fast.bat`) - Recomendado**:
+   - Compila com `--onedir`.
+   - **Inicialização instantânea** (menos de 1 segundo).
+   - O executável fica pronto em `dist\PyImageJ-Studio\PyImageJ-Studio.exe`.
+
+2. **Modo Arquivo Único (`build_exe.bat`)**:
+   - Compila em um único arquivo `.exe` portátil.
+   - Otimizado com exclusão estrita de módulos desnecessários para reduzir o tamanho.
 
 ---
 

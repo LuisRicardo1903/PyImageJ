@@ -1,6 +1,7 @@
 @echo off
 echo ===================================================
 echo     Compilando PyImageJ Studio para Executavel (.exe)
+echo          (Modo Otimizado - Sem Modulos Pesados)
 echo ===================================================
 echo.
 
@@ -15,7 +16,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
-echo 2. Executando PyInstaller...
+echo 2. Executando PyInstaller com exclusao de modulos desnecessarios...
 pyinstaller --noconsole --onefile ^
     --name "PyImageJ-Studio" ^
     --add-data "core;core" ^
@@ -27,6 +28,29 @@ pyinstaller --noconsole --onefile ^
     --hidden-import "skimage.filters" ^
     --hidden-import "skimage.measure" ^
     --hidden-import "skimage.segmentation" ^
+    --exclude-module "matplotlib" ^
+    --exclude-module "tkinter" ^
+    --exclude-module "PySide6.QtQml" ^
+    --exclude-module "PySide6.QtQuick" ^
+    --exclude-module "PySide6.QtQuickWidgets" ^
+    --exclude-module "PySide6.QtWebEngineCore" ^
+    --exclude-module "PySide6.QtWebEngineWidgets" ^
+    --exclude-module "PySide6.Qt3DCore" ^
+    --exclude-module "PySide6.Qt3DRender" ^
+    --exclude-module "PySide6.QtBluetooth" ^
+    --exclude-module "PySide6.QtSensors" ^
+    --exclude-module "PySide6.QtPositioning" ^
+    --exclude-module "PySide6.QtMultimedia" ^
+    --exclude-module "PySide6.QtMultimediaWidgets" ^
+    --exclude-module "PySide6.QtNfc" ^
+    --exclude-module "PySide6.QtPdf" ^
+    --exclude-module "PySide6.QtPdfWidgets" ^
+    --exclude-module "PySide6.QtSpatialAudio" ^
+    --exclude-module "PySide6.QtDesigner" ^
+    --exclude-module "PySide6.QtHelp" ^
+    --exclude-module "PySide6.QtTest" ^
+    --exclude-module "PySide6.QtSql" ^
+    --exclude-module "PySide6.QtNetwork" ^
     --clean main.py
 
 if %ERRORLEVEL% NEQ 0 (
@@ -41,7 +65,7 @@ copy /y "dist\PyImageJ-Studio.exe" "PyImageJ-Studio.exe"
 
 echo.
 echo ===================================================
-echo   SUCESSO! Executavel gerado:
+echo   SUCESSO! Executavel otimizado gerado:
 echo   - Na pasta principal: %~dp0PyImageJ-Studio.exe
 echo   - E na pasta dist:    %~dp0dist\PyImageJ-Studio.exe
 echo ===================================================

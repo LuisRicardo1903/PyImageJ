@@ -4,7 +4,7 @@ Features interactive live threshold adjustment, algorithm selection,
 and instant porosity percentage preview.
 """
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
     QComboBox, QCheckBox, QPushButton, QGroupBox, QSpinBox
@@ -21,6 +21,12 @@ class ThresholdPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Debounce timer to prevent GUI freezing during fast slider drags
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(25)  # 25ms debounce (~40 FPS preview)
+        self._debounce_timer.timeout.connect(self._emit_threshold_update)
+
         self.init_ui()
 
     def init_ui(self):
@@ -102,10 +108,13 @@ class ThresholdPanel(QWidget):
         self.spin_val.blockSignals(True)
         self.spin_val.setValue(val)
         self.spin_val.blockSignals(False)
-        self.threshold_changed.emit(val, self.chk_dark.isChecked())
+        self._debounce_timer.start()
+
+    def _emit_threshold_update(self):
+        self.threshold_changed.emit(self.slider.value(), self.chk_dark.isChecked())
 
     def on_param_changed(self):
-        self.threshold_changed.emit(self.slider.value(), self.chk_dark.isChecked())
+        self._debounce_timer.start()
 
     def set_threshold_value(self, val: int):
         self.slider.blockSignals(True)

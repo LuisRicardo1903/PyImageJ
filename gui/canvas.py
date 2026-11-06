@@ -89,6 +89,15 @@ class InteractiveCanvas(QGraphicsView):
             self.zoom_factor = 1.0
             self.fitInView(self.pixmap_item, Qt.KeepAspectRatio)
 
+    def update_image_fast(self, arr: np.ndarray):
+        """
+        High-performance pixmap update for live previews.
+        Avoids recalculating scene bounds and coordinate matrices.
+        """
+        self.raw_numpy = arr
+        qimg = numpy_to_qimage(arr)
+        self.pixmap_item.setPixmap(QPixmap.fromImage(qimg))
+
     def wheelEvent(self, event: QWheelEvent):
         zoom_in_factor = 1.25
         zoom_out_factor = 1 / zoom_in_factor

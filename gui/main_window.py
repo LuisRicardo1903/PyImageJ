@@ -264,6 +264,7 @@ class MainWindow(QMainWindow):
             self.load_image(file_path)
 
     def load_image(self, file_path: str):
+        self._base_rgb = None
         if self.doc.load(file_path):
             self.canvas.set_image(self.doc.current_image, reset_zoom=True)
             self.setWindowTitle(f"PyImageJ Studio - {self.doc.title}")
@@ -302,6 +303,7 @@ class MainWindow(QMainWindow):
 
     def undo(self):
         if self.doc.undo():
+            self._base_rgb = None
             self.canvas.set_image(self.doc.current_image)
             self.status_bar.showMessage("Ação desfeita", 2000)
 
@@ -309,6 +311,7 @@ class MainWindow(QMainWindow):
         if not self.doc.is_loaded:
             return
         self.doc.apply_filter(filter_name, **kwargs)
+        self._base_rgb = None
         self.canvas.set_image(self.doc.current_image)
         self.status_bar.showMessage(f"Filtro aplicado: {filter_name}", 3000)
 
@@ -399,21 +402,26 @@ class MainWindow(QMainWindow):
         binary = apply_threshold(gray, threshold_val, dark_objects=dark_objects, mask=self.valid_roi_mask)
         self.active_binary_mask = binary
 
-        # Calculate estimated porosity
-        total_valid = np.sum(self.valid_roi_mask) if self.valid_roi_mask is not None else binary.size
-        pore_count = np.sum(binary > 0)
+        # Fast porosity calculation using numpy count_nonzero
+        total_valid = int(np.count_nonzero(self.valid_roi_mask)) if self.valid_roi_mask is not None else binary.size
+        pore_count = int(np.count_nonzero(binary))
         porosity_pct = (pore_count / total_valid * 100.0) if total_valid > 0 else 0.0
         self.threshold_panel.update_porosity_preview(porosity_pct)
 
-        # Create live colored mask overlay (red overlay over original)
-        base = self.doc.current_image.copy()
-        if base.ndim == 2:
-            base = cv2.cvtColor(base, cv2.COLOR_GRAY2RGB)
-        # Red highlight where mask is 255
-        red_tint = base.copy()
-        red_tint[binary > 0] = [255, 60, 60]
-        preview = cv2.addWeighted(base, 0.6, red_tint, 0.4, 0)
-        self.canvas.set_image(preview)
+        # High-performance overlay rendering
+        if getattr(self, '_base_rgb', None) is None:
+            if self.doc.current_image.ndim == 2:
+                self._base_rgb = cv2.cvtColor(self.doc.current_image, cv2.COLOR_GRAY2RGB)
+            else:
+                self._base_rgb = self.doc.current_image.copy()
+
+        preview = self._base_rgb.copy()
+        mask = (binary > 0)
+        # Direct vectorized red tint: blend red channel instantly
+        preview[mask, 0] = np.clip(preview[mask, 0].astype(np.uint16) + 140, 0, 255).astype(np.uint8)
+        preview[mask, 1] = (preview[mask, 1] // 3).astype(np.uint8)
+        preview[mask, 2] = (preview[mask, 2] // 3).astype(np.uint8)
+        self.canvas.update_image_fast(preview)
 
     def on_threshold_applied(self):
         if self.active_binary_mask is not None:
